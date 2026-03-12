@@ -22,7 +22,7 @@ json_creds = json.loads(os.environ["GCP_JSON"])
 
 # --- 設定 ---
 TARGET_URL = "https://asp1.six-pack.xyz/admin/report/ad/list"
-DRIVE_FOLDER_ID = "1rygU940nK8eKoZX2emKv_HftRRjY87BW"
+DRIVE_FOLDER_ID = "1NypwP4Tz5oMzjDUBc21fBu7ijDICfzS3"
 
 def upload_to_drive(file_path):
     """Google DriveにCSVファイルをアップロードする関数"""
