@@ -22,7 +22,7 @@ PASSWORD = os.environ["USER_PASS"]
 json_creds = json.loads(os.environ["GCP_JSON"])
 
 # --- 設定 ---
-TARGET_URL = "https://asp1.six-pack.xyz/admin/log/action/list"
+TARGET_URL = "https://asp1.six-pack.xyz/admin/report/ad/list"
 DRIVE_FOLDER_ID = "1rygU940nK8eKoZX2emKv_HftRRjY87BW"
 
 def upload_to_drive(file_path):
@@ -41,7 +41,6 @@ def upload_to_drive(file_path):
     }
     media = MediaFileUpload(file_path, mimetype='text/csv')
 
-    # 共有ドライブ対応
     file = service.files().create(
         body=file_metadata, 
         media_body=media, 
@@ -51,36 +50,10 @@ def upload_to_drive(file_path):
     
     print(f"アップロード完了 File ID: {file.get('id')}")
 
-def get_yesterday_jst():
-    """日本時間の昨日を計算して文字列(YYYY年MM月DD日)で返す"""
-    JST = timezone(timedelta(hours=+9), 'JST')
-    now = datetime.now(JST)
-    yesterday = now - timedelta(days=1)
-    return yesterday.strftime("%Y年%m月%d日")
-
-def input_date_range(driver, wait, label_text, date_str):
-    """日付範囲を入力する共通関数"""
-    try:
-        full_date_str = f"{date_str} - {date_str}"
-        print(f"「{label_text}」に日付を入力します: {full_date_str}")
-        
-        label_elem = wait.until(EC.presence_of_element_located((By.XPATH, f"//*[contains(text(), '{label_text}')]")))
-        input_elem = label_elem.find_element(By.XPATH, "./following::input[1]")
-        
-        driver.execute_script("arguments[0].click();", input_elem)
-        driver.execute_script("arguments[0].value = '';", input_elem)
-        time.sleep(0.5)
-        
-        input_elem.send_keys(full_date_str)
-        input_elem.send_keys(Keys.ENTER)
-        time.sleep(1)
-    except Exception as e:
-        print(f"日付入力エラー({label_text}): {e}")
-
 def main():
-    print("=== Action Log取得処理開始 ===")
+    print("=== Ad Report CSV取得処理開始 ===")
     
-    download_dir = os.path.join(os.getcwd(), "downloads_action")
+    download_dir = os.path.join(os.getcwd(), "downloads_report")
     if not os.path.exists(download_dir):
         os.makedirs(download_dir)
 
@@ -115,7 +88,7 @@ def main():
         # --- 2. 画面リフレッシュ ---
         print("画面を再読み込みします...")
         driver.get(auth_url)
-        time.sleep(5) 
+        time.sleep(5)
 
         # --- 3. 「絞り込み検索」ボタンをクリック ---
         print("検索メニューを開きます...")
@@ -126,11 +99,21 @@ def main():
         except:
             pass
 
-        # --- 4. 検索条件入力 ---
-        yesterday_str = get_yesterday_jst()
-        input_date_range(driver, wait, "登録日時", yesterday_str)
-        input_date_range(driver, wait, "承認日時", yesterday_str)
+        # --- 4. 登録日時の「本日」ボタンをクリック ---
+        print("登録日時の「本日」ボタンをクリックします...")
+        try:
+            today_btn = wait.until(EC.element_to_be_clickable(
+                (By.CSS_SELECTOR, "button.btn.btn-secondary.btn-sm.today")
+            ))
+            driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", today_btn)
+            time.sleep(0.5)
+            driver.execute_script("arguments[0].click();", today_btn)
+            print("「本日」ボタンをクリックしました")
+            time.sleep(1)
+        except Exception as e:
+            print(f"「本日」ボタンのクリックエラー: {e}")
 
+        # --- 5. パートナーを入力 ---
         print("パートナーを入力します...")
         try:
             partner_label = driver.find_element(By.XPATH, "//div[contains(text(), 'パートナー')] | //label[contains(text(), 'パートナー')]")
@@ -140,47 +123,12 @@ def main():
             
             active_elem = driver.switch_to.active_element
             active_elem.send_keys("株式会社フルアウト")
-            time.sleep(3) 
+            time.sleep(3)
             active_elem.send_keys(Keys.ENTER)
             print("パートナーを選択しました")
             time.sleep(2)
-
         except Exception as e:
             print(f"パートナー入力エラー: {e}")
-
-        # --- 5. 詳細項目 > クリック時リファラ ---
-        print("詳細項目を設定します...")
-        try:
-            # 「詳細項目」を開く
-            detail_btn = wait.until(EC.presence_of_element_located((By.XPATH, "//*[contains(text(), '詳細項目')]")))
-            driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", detail_btn)
-            time.sleep(1)
-            driver.execute_script("arguments[0].click();", detail_btn)
-            print("「詳細項目」をクリックしました")
-            
-            time.sleep(3) # メニュー展開待ち
-
-            # value="clickReferrer" を持つinputを探す
-            # 構造: div(aria-checked) > input(value="clickReferrer")
-            target_input = wait.until(EC.presence_of_element_located((By.XPATH, "//input[@value='clickReferrer']")))
-            target_div = target_input.find_element(By.XPATH, "./..")
-            
-            # 状態を確認
-            current_status = target_div.get_attribute("aria-checked")
-            
-            if current_status == "false":
-                driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", target_div)
-                time.sleep(0.5)
-                # JavaScriptで div をクリック
-                driver.execute_script("arguments[0].click();", target_div)
-                print("「クリック時リファラ」をONにしました")
-            else:
-                print("「クリック時リファラ」は既にONのため操作しません")
-            
-            time.sleep(1)
-
-        except Exception as e:
-            print(f"詳細項目の設定でエラー: {e}")
 
         # --- 6. 検索ボタン実行 ---
         print("検索ボタンを探して押します...")
@@ -198,7 +146,6 @@ def main():
                 print("検索ボタンをクリックしました")
             else:
                 webdriver.ActionChains(driver).send_keys(Keys.ENTER).perform()
-
         except Exception as e:
             print(f"検索ボタン操作エラー: {e}")
         
@@ -214,7 +161,6 @@ def main():
             time.sleep(1)
             driver.execute_script("arguments[0].click();", csv_btn)
             print("CSV生成ボタンをクリックしました")
-            
         except Exception as e:
             print(f"CSVボタンエラー: {e}")
             return
