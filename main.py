@@ -2,11 +2,10 @@ import os
 import json
 import time
 import glob
-from datetime import datetime, timedelta, timezone
+import csv
 from urllib.parse import quote
 from google.oauth2.service_account import Credentials
 from googleapiclient.discovery import build
-from googleapiclient.http import MediaFileUpload
 from selenium import webdriver
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.common.by import By
@@ -23,32 +22,66 @@ json_creds = json.loads(os.environ["GCP_JSON"])
 
 # --- 設定 ---
 TARGET_URL = "https://asp1.six-pack.xyz/admin/report/ad/list"
-DRIVE_FOLDER_ID = "1rygU940nK8eKoZX2emKv_HftRRjY87BW"
+SPREADSHEET_ID = "1H2TiCraNjMNoj3547ZB78nQqrdfbfk2a0rMLSbZBE48"
+SHEET_GID = 1871082066
 
-def upload_to_drive(file_path):
-    """Google DriveにCSVファイルをアップロードする関数"""
-    print(f"ドライブへのアップロードを開始: {file_path}")
+def get_sheet_name_by_gid(service, spreadsheet_id, gid):
+    """GIDからシート名を取得する"""
+    spreadsheet = service.spreadsheets().get(spreadsheetId=spreadsheet_id).execute()
+    for sheet in spreadsheet['sheets']:
+        if sheet['properties']['sheetId'] == gid:
+            return sheet['properties']['title']
+    raise Exception(f"GID {gid} に対応するシートが見つかりません")
+
+def write_csv_to_spreadsheet(csv_file_path):
+    """CSVの中身をスプレッドシートに書き込む"""
+    print(f"CSVファイルを読み込み中: {csv_file_path}")
     
-    scopes = ['https://www.googleapis.com/auth/drive']
+    # CSVファイルを読み込む
+    rows = []
+    with open(csv_file_path, 'r', encoding='utf-8-sig') as f:
+        reader = csv.reader(f)
+        for row in reader:
+            rows.append(row)
+    
+    if not rows:
+        print("CSVファイルが空です")
+        return
+    
+    print(f"読み込み完了: {len(rows)}行 x {len(rows[0])}列")
+    
+    # Google Sheets APIに接続
+    scopes = [
+        'https://www.googleapis.com/auth/spreadsheets',
+        'https://www.googleapis.com/auth/drive'
+    ]
     creds = Credentials.from_service_account_info(json_creds, scopes=scopes)
-    service = build('drive', 'v3', credentials=creds)
-
-    file_name = os.path.basename(file_path)
+    service = build('sheets', 'v4', credentials=creds)
     
-    file_metadata = {
-        'name': file_name,
-        'parents': [DRIVE_FOLDER_ID]
+    # GIDからシート名を取得
+    sheet_name = get_sheet_name_by_gid(service, SPREADSHEET_ID, SHEET_GID)
+    print(f"書き込み先シート名: {sheet_name}")
+    
+    # 既存データをクリア
+    service.spreadsheets().values().clear(
+        spreadsheetId=SPREADSHEET_ID,
+        range=f"{sheet_name}",
+        body={}
+    ).execute()
+    print("既存データをクリアしました")
+    
+    # CSVデータを書き込み（A1セルから）
+    body = {
+        'values': rows
     }
-    media = MediaFileUpload(file_path, mimetype='text/csv')
-
-    file = service.files().create(
-        body=file_metadata, 
-        media_body=media, 
-        fields='id', 
-        supportsAllDrives=True
+    service.spreadsheets().values().update(
+        spreadsheetId=SPREADSHEET_ID,
+        range=f"{sheet_name}!A1",
+        valueInputOption='RAW',
+        body=body
     ).execute()
     
-    print(f"アップロード完了 File ID: {file.get('id')}")
+    print(f"スプレッドシートへの書き込み完了: {len(rows)}行")
 
 def main():
     print("=== Ad Report CSV取得処理開始 ===")
@@ -182,8 +215,12 @@ def main():
         csv_file_path = files[0]
         print(f"ダウンロード成功: {csv_file_path}")
 
-        # --- 8. Google Driveへアップロード ---
-        upload_to_drive(csv_file_path)
+        # --- 8. スプレッドシートに書き込み ---
+        write_csv_to_spreadsheet(csv_file_path)
+
+        # --- 9. CSVファイルを削除 ---
+        os.remove(csv_file_path)
+        print(f"CSVファイルを削除しました: {csv_file_path}")
 
     except Exception as e:
         print(f"【エラー発生】: {e}")
