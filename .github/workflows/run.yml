@@ -2,9 +2,8 @@ name: Action Log Download
 
 on:
   workflow_dispatch: # 手動ボタン有効
-  schedule:
-    # 日本時間 毎日 04:00 実行 (UTC 19:00)
-    - cron: '0 19 * * *'
+  repository_dispatch:
+    types: [run-from-gas]
 
 jobs:
   run-script:
